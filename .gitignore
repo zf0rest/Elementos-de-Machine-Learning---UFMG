@@ -2,5 +2,15 @@
 .Rhistory
 .RData
 .Ruserdata
-
 /.quarto/
+
+/_site/
+/_freeze/
+/index_files/
+*_files/
+*_cache/
+
+*.xlsx
+*.csv
+*.pdf
+*.html
