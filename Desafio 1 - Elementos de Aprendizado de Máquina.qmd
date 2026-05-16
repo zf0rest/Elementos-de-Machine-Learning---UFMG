@@ -1,0 +1,308 @@
+---
+title: "Desafio 1 - Elementos de Aprendizado de Máquina"
+warning: FALSE
+echo: FALSE
+---
+
+## Exercício #01
+
+Analisando os dados a partir da matriz de correlações abaixo, conclui-se que não há apenas forte associação linear entre $Y$ e as covariáveis do dataset, mas também colinearidade entre os próprios preditores. Esse fator é importante: colinearidade excessiva infla artificialmente o $R^2$ e mascara os efeitos reais dos estimadores.
+
+```{r}
+library(openxlsx)
+dados <- read.xlsx("ModeloVigente_DadosCP62_2023.xlsx")
+```
+
+```{r}
+#| label: fig-analise-conjunta
+#| fig-cap: "Análise exploratória de dados"
+#| fig-subcap: 
+#|   - "Matriz de correlação"
+#|   - "Distribuições de densidade"
+#| layout-ncol: 2
+#| fig-width: 8
+#| fig-height: 7
+#| fig-dpi: 300
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(GGally)
+
+dados <-janitor::clean_names(dados)
+
+ggcorr(dados, 
+       method = c("everything", "pearson"), 
+       label = TRUE,
+       label_size = 3,
+       label_round = 2,
+       label_alpha = TRUE,
+       hjust = 0.8,
+       size = 4,
+       color = "grey50",
+       layout.exp = 1)
+
+dados %>%
+  select(where(is.numeric)) %>% 
+  pivot_longer(everything()) %>%
+  ggplot(aes(x = value)) +
+  geom_density(fill = "royalblue", alpha = 0.6) + 
+  facet_wrap(~name, scales = "free") + 
+  
+  scale_x_continuous(n.breaks = 3) + 
+  theme_minimal()
+```
+
+Além disso, a distribução das variáveis numéricas intui um formato análago entre elas: uma típica assimetria à direita, ou seja, oportunidade para uma transformação $log-log$ para estabilizar a variância e prevenir heterocedasticidade. A transformação é cabível em ambos os lados da equação, pois todos possuem a mesma assimetria, resultando em um modelo da seguinte forma:
+
+$$\ln (Y_{i})=\beta _{0}+\beta _{k}\ln (X_{ki})+u_{i}$$
+
+Após a análise exploratória, levantamos através do estudo da "inflação de variância (VIF)" quais preditores são mais "perigosos" ao modelo por inflar o $R^2$ artificialmente e elaboramos dois modelos (com ou sem essas variáveis):
+
+```{r}
+library(car)
+library(knitr)
+
+mod <- lm(log(pmso+1) ~ 
+            log(rede_alta+1) + 
+     log(rede_subterranea+1) + 
+           log(rede_aerea+1) + 
+            log(mercado_p+1) + 
+                 log(cons+1) + 
+                  log(chi+1) + 
+                  log(pnt+1)
+     ,data=dados
+   )
+
+vif_df <- data.frame(Variavel = names(vif(mod)), 
+                     VIF = as.numeric(vif(mod)))
+
+vif_df %>%
+  arrange(desc(VIF)) %>%
+  kable(digits = 2, 
+        col.names = c("Variável", "VIF"),
+        caption = "Análise de multicolinearidade (VIF)")
+```
+
+```{r}
+#| echo: FALSE
+
+library(reglin)
+library(broom)
+library(modelsummary)
+
+mod_1 <- lm(log(pmso+1) ~  
+     log(rede_subterranea+1) +
+     log(chi+1) + 
+     log(pnt+1) 
+   ,data=dados
+   )
+
+glance_custom.lm <- function(x) {
+  out <- broom::glance(x)
+  # Criamos uma coluna nova com um nome que não tenha erro
+  out$p_global <- out$p.value 
+  return(out)
+}
+
+meu_mapa_gof <- list(
+  list("raw" = "adj.r.squared", "clean" = "R² ajustado", "fmt" = 3),
+  list("raw" = "p_global", "clean" = "P-valor (F)",  "fmt" = "%.2e") 
+)
+
+modelos <- list(
+  "Original" = mod,
+  "Log-Log"  = mod_1
+)
+
+modelsummary(modelos, 
+             fmt = 3,
+             estimate = "{estimate}{stars}",
+             statistic = "std.error",
+             gof_map = meu_mapa_gof,
+             metrics = "all",
+             include_empty = TRUE,
+             title = "Comparação de Modelos")
+```
+
+Tendo em vista os resultados, ambos são globalmente significativos. No entanto, optamos por seguir com o modelo mais simples que, apesar de um $R²$ mais enxuto, exclui as variáveis que inflam essa medida artificialmente e propõe melhor significância estatística para as features individualmente. Em termos de explicabilidade, não há prejuízos, mas uma mudança de perspectiva e escala: em um modelo $log-log$ os coeficientes expressam a elasticidade de $Y$ dado $X$, ou seja, estamos falando sobre o quanto $Y$ reage percentualmente às variações percentuais nos preditores. Analisando os resíduos e a influência, obtivemos que:
+
+```{r}
+#| label: fig-residuos
+#| fig-width: 8
+#| fig-height: 7
+#| out-width: "50%"
+#| fig-align: "center"
+#| fig-dpi: 300
+#| layout-ncol: 2
+#| column: page
+#| echo: FALSE
+
+ggresiduals(mod_1)
+
+dados_diag <- augment(mod_1) %>% 
+  mutate(id = row_number())
+threshold <- 4 / nrow(dados_diag)
+
+ggplot(dados_diag, aes(x = id, y = .cooksd)) +
+  geom_segment(aes(xend = id, yend = 0), color = "grey70") + 
+  geom_point(aes(color = .cooksd > threshold), size = 2) + 
+  geom_hline(yintercept = threshold, color = "red", linetype = "dashed") +
+  scale_color_manual(values = c("black", "red")) +
+  theme_minimal() +
+  labs(title = "Distância de Cook",
+       subtitle = paste("Threshold crítico:", round(threshold, 3)),
+       x = "ID da Observação", y = "Distância de Cook") +
+  guides(color = "none") 
+```
+
+Graficamente, não há evidência de quebra dos pressupostos dos modelos lineares quanto aos resíduos. Todavia, os testes formais podem dar mais detalhes:
+
+```{r}
+#| layout-ncol: 2
+#| column: page
+#| echo: FALSE
+
+#Residuos
+testResiduals(mod_1)
+
+
+library(dplyr)
+
+#influencia
+
+diagnosticos <- augment(mod_1) %>%
+  mutate(id = row_number()) %>%
+  select(id, .cooksd, .hat, .std.resid)
+
+dfbs <- as.data.frame(dfbetas(mod_1))
+colnames(dfbs) <- paste0("dfb_", colnames(dfbs))
+diagnosticos <- bind_cols(diagnosticos, dfbs)
+
+n <- nrow(dados)
+p <- length(coef(mod_1))
+limite_cook <- 4/n
+limite_hat <- 2*p/n
+
+tabela_influencia <- diagnosticos %>%
+  filter(.cooksd > limite_cook | abs(.std.resid) > 2 | .hat > limite_hat) %>%
+  arrange(desc(.cooksd)) %>%
+  head(5)
+
+
+tabela_influencia %>%
+  kable(
+    digits = 3,
+    caption = "Tabela 1: Diagnóstico de Observações Influentes (Top 10)",
+    col.names = c("ID", "Dist. Cook", "Leverage (Hat)", "Resíduo Std", 
+                  "DFB Intercepto", "DFB Log(Rede)", "DFB Log(Chi)", "DFB Log(Pnt)")
+  )
+```
+
+A observação 50 apresentou a maior alavancagem do modelo. Ao investigar o dado original, identificou-se que esta distribuidora reportou valor zero para Perdas Não Técnicas (PNT), um comportamento atípico no cenário nacional de distribuição de energia. Para evitar que esta especificidade distorcesse as elasticidades globais, optou-se pelo isolamento deste ponto e também do 40, que explode o limite da a distância de cook, via variável dummy.
+
+```{r}
+#| echo: FALSE
+#| fig-align: "center"
+
+n <- nrow(dados)
+limite_cook <- 4/n
+
+dados_refinado <- dados %>%
+  mutate(
+    dummy_id40 = ifelse(row_number() == 40, 1, 0), # O outlier de erro
+    dummy_id50 = ifelse(row_number() == 50, 1, 0)  # O outlier de alavancagem (PNT zero)
+  )
+
+mod_final <- lm(log(pmso + 1) ~ 
+                  log(rede_subterranea + 1) + 
+                  log(chi + 1) + 
+                  log(pnt + 1) + 
+                  dummy_id40 + 
+                  dummy_id50, 
+                data = dados_refinado)
+
+meu_mapa_gof <- list(
+  list("raw" = "adj.r.squared", "clean" = "R² ajustado", "fmt" = 3),
+  list("raw" = "p_global", "clean" = "P-valor (F)",  "fmt" = "%.2e") 
+)
+
+modelos <- list(
+  "Log-Log" = mod_1,
+  "Log-Log (sem influencia)"  = mod_final
+)
+
+modelsummary(modelos, 
+             fmt = 3,
+             estimate = "{estimate}{stars}",
+             statistic = "std.error",
+             gof_map = meu_mapa_gof,
+             metrics = "all",
+             include_empty = TRUE,
+             title = "Comparação de Modelos")
+```
+
+Verificando métricas de erro e influência novamente:
+
+```{r}
+#| label: fig-influencia-ajustada
+#| fig-subcap: 
+#|   - "Resíduois"
+#|   - "Influência"
+#| layout-ncol: 2
+#| fig-width: 8
+#| fig-height: 7
+#| fig-dpi: 300
+
+ggresiduals(mod_final)
+
+dados_diag <- augment(mod_final) %>% 
+  mutate(id = row_number())
+threshold <- 4 / nrow(dados_diag)
+
+ggplot(dados_diag, aes(x = id, y = .cooksd)) +
+  geom_segment(aes(xend = id, yend = 0), color = "grey70") + 
+  geom_point(aes(color = .cooksd > threshold), size = 2) + 
+  geom_hline(yintercept = threshold, color = "red", linetype = "dashed") +
+  scale_color_manual(values = c("black", "red")) +
+  theme_minimal() +
+  labs(title = "Distância de Cook",
+       subtitle = paste("Threshold crítico:", round(threshold, 3)),
+       x = "ID da Observação", y = "Distância de Cook") +
+  guides(color = "none") 
+```
+
+```{r}
+#| label: tbl-validacao
+#| echo: false
+#| warning: false
+
+library(broom)
+library(knitr)
+library(kableExtra)
+
+anova_comp <- anova(mod_1, mod_final) %>% 
+  tidy()
+
+anova_comp %>%
+  kable(
+    digits = 4,
+    caption = "Teste F Parcial",
+    col.names = c("Modelo", "GL Res.", "RSS", "Df", "Soma Quadr.", "F", "p-valor")
+  ) %>%
+  kable_styling(latex_options = "hold_position", font_size = 11)
+
+testResiduals(mod_final)
+```
+
+Conclusão:
+
+O modelo final apresentou diagnóstico mais robusto na comparação de modelos via ANOVA, atendendo integralmente aos pressupostos clássicos da regressão linear. Adicionalmente, a ausência de outliers significativos via teste de Bonferroni valida a estratégia de isolamento das observações atípicas por variáveis dummy.
+
+-   Log(PNT) - é o maior impacto: um aumento de 1% nas Perdas Não Técnicas (fraudes) eleva o custo operacional esperado de \~0.39%. Isso faz todo o sentido, pois combater "gatos" exige equipe e fiscalização.
+
+-   Log(chi) - se a interrupção de energia subir 1%, o custo sobe \~0.08%. Mostra que manter a continuidade custa dinheiro.
+
+-   Log(Rede Sub.) - redes subterrâneas são mais caras de manter; um aumento de 1% na rede eleva o custo em \~0.12%.
+
+-   ID 40: o coeficiente de 2.714 é gigantesco e super significativo ($p < 0.001$). Isso confirma que o ID 40 era uma anomalia. Sem essa dummy, esse valor estaria "sujando" todos os outros coeficientes. Ele gasta muito mais do que o tamanho dele justificaria.
