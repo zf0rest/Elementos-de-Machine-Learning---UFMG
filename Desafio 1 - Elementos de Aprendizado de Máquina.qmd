@@ -1,9 +1,3 @@
----
-title: "Desafio 1 - Elementos de Aprendizado de Máquina"
-warning: FALSE
-echo: FALSE
----
-
 ## Exercício #01
 
 Analisando os dados a partir da matriz de correlações abaixo, conclui-se que não há apenas forte associação linear entre $Y$ e as covariáveis do dataset, mas também colinearidade entre os próprios preditores. Esse fator é importante: colinearidade excessiva infla artificialmente o $R^2$ e mascara os efeitos reais dos estimadores.
@@ -23,6 +17,8 @@ dados <- read.xlsx("ModeloVigente_DadosCP62_2023.xlsx")
 #| fig-width: 8
 #| fig-height: 7
 #| fig-dpi: 300
+#| out-width: "70%"
+#| echo: false
 
 library(ggplot2)
 library(tidyr)
@@ -60,6 +56,7 @@ $$\ln (Y_{i})=\beta _{0}+\beta _{k}\ln (X_{ki})+u_{i}$$
 Após a análise exploratória, levantamos através do estudo da "inflação de variância (VIF)" quais preditores são mais "perigosos" ao modelo por inflar o $R^2$ artificialmente e elaboramos dois modelos (com ou sem essas variáveis):
 
 ```{r}
+#| echo: false
 library(car)
 library(knitr)
 
@@ -85,36 +82,29 @@ vif_df %>%
 ```
 
 ```{r}
-#| echo: FALSE
-
 library(reglin)
 library(broom)
 library(modelsummary)
-
 mod_1 <- lm(log(pmso+1) ~  
      log(rede_subterranea+1) +
      log(chi+1) + 
      log(pnt+1) 
    ,data=dados
    )
-
 glance_custom.lm <- function(x) {
   out <- broom::glance(x)
   # Criamos uma coluna nova com um nome que não tenha erro
   out$p_global <- out$p.value 
   return(out)
 }
-
 meu_mapa_gof <- list(
   list("raw" = "adj.r.squared", "clean" = "R² ajustado", "fmt" = 3),
   list("raw" = "p_global", "clean" = "P-valor (F)",  "fmt" = "%.2e") 
 )
-
 modelos <- list(
   "Original" = mod,
   "Log-Log"  = mod_1
 )
-
 modelsummary(modelos, 
              fmt = 3,
              estimate = "{estimate}{stars}",
@@ -129,14 +119,17 @@ Tendo em vista os resultados, ambos são globalmente significativos. No entanto,
 
 ```{r}
 #| label: fig-residuos
+#| fig-subcap: 
+#|   - "Resíduois"
+#|   - "Influência"
+#| layout-ncol: 2
 #| fig-width: 8
 #| fig-height: 7
-#| out-width: "50%"
-#| fig-align: "center"
 #| fig-dpi: 300
-#| layout-ncol: 2
-#| column: page
-#| echo: FALSE
+#| out-width: "70%"
+#| fig-align: "center"
+#| echo: false
+#| layout-valign: top
 
 ggresiduals(mod_1)
 
@@ -153,32 +146,26 @@ ggplot(dados_diag, aes(x = id, y = .cooksd)) +
   labs(title = "Distância de Cook",
        subtitle = paste("Threshold crítico:", round(threshold, 3)),
        x = "ID da Observação", y = "Distância de Cook") +
-  guides(color = "none") 
+  guides(color = "none")
 ```
 
 Graficamente, não há evidência de quebra dos pressupostos dos modelos lineares quanto aos resíduos. Todavia, os testes formais podem dar mais detalhes:
 
 ```{r}
 #| layout-ncol: 2
-#| column: page
-#| echo: FALSE
-
+#| layout-valign: top
+#| echo: false
 #Residuos
 testResiduals(mod_1)
-
-
 library(dplyr)
 
 #influencia
-
 diagnosticos <- augment(mod_1) %>%
   mutate(id = row_number()) %>%
   select(id, .cooksd, .hat, .std.resid)
-
 dfbs <- as.data.frame(dfbetas(mod_1))
 colnames(dfbs) <- paste0("dfb_", colnames(dfbs))
 diagnosticos <- bind_cols(diagnosticos, dfbs)
-
 n <- nrow(dados)
 p <- length(coef(mod_1))
 limite_cook <- 4/n
@@ -189,29 +176,24 @@ tabela_influencia <- diagnosticos %>%
   arrange(desc(.cooksd)) %>%
   head(5)
 
-
 tabela_influencia %>%
   kable(
-    digits = 3,
-    caption = "Tabela 1: Diagnóstico de Observações Influentes (Top 10)",
-    col.names = c("ID", "Dist. Cook", "Leverage (Hat)", "Resíduo Std", 
-                  "DFB Intercepto", "DFB Log(Rede)", "DFB Log(Chi)", "DFB Log(Pnt)")
-  )
+    format = "latex",
+    digits = 3, caption = "Diagnóstico formal de observações influentes",
+    col.names = c("ID", "Cook", "Hat", "Res.Std", 
+                  "Inter.", "Rede", "Chi", "Pnt"))
 ```
 
 A observação 50 apresentou a maior alavancagem do modelo. Ao investigar o dado original, identificou-se que esta distribuidora reportou valor zero para Perdas Não Técnicas (PNT), um comportamento atípico no cenário nacional de distribuição de energia. Para evitar que esta especificidade distorcesse as elasticidades globais, optou-se pelo isolamento deste ponto e também do 40, que explode o limite da a distância de cook, via variável dummy.
 
 ```{r}
-#| echo: FALSE
-#| fig-align: "center"
-
 n <- nrow(dados)
 limite_cook <- 4/n
 
 dados_refinado <- dados %>%
   mutate(
-    dummy_id40 = ifelse(row_number() == 40, 1, 0), # O outlier de erro
-    dummy_id50 = ifelse(row_number() == 50, 1, 0)  # O outlier de alavancagem (PNT zero)
+    dummy_id40 = ifelse(row_number() == 40, 1, 0),
+    dummy_id50 = ifelse(row_number() == 50, 1, 0)
   )
 
 mod_final <- lm(log(pmso + 1) ~ 
@@ -221,6 +203,11 @@ mod_final <- lm(log(pmso + 1) ~
                   dummy_id40 + 
                   dummy_id50, 
                 data = dados_refinado)
+```
+
+```{r}
+#| echo: FALSE
+#| fig-align: "center"
 
 meu_mapa_gof <- list(
   list("raw" = "adj.r.squared", "clean" = "R² ajustado", "fmt" = 3),
@@ -253,6 +240,9 @@ Verificando métricas de erro e influência novamente:
 #| fig-width: 8
 #| fig-height: 7
 #| fig-dpi: 300
+#| out-width: "70%"
+#| fig-align: "center"
+#| echo: false
 
 ggresiduals(mod_final)
 
@@ -283,16 +273,15 @@ library(kableExtra)
 
 anova_comp <- anova(mod_1, mod_final) %>% 
   tidy()
-
+anova_comp$term <- c("Modelo 1 (Simples)", "Modelo 2 (Com Dummies)")
 anova_comp %>%
   kable(
     digits = 4,
     caption = "Teste F Parcial",
-    col.names = c("Modelo", "GL Res.", "RSS", "Df", "Soma Quadr.", "F", "p-valor")
+    col.names = c("Modelo", "GL Res.", "RSS", "Df", "Soma Quadr.", "F", "p-valor"),
+    booktabs = TRUE
   ) %>%
-  kable_styling(latex_options = "hold_position", font_size = 11)
-
-testResiduals(mod_final)
+  kable_styling(latex_options = c("hold_position", "scale_down"))
 ```
 
 Conclusão:
@@ -305,4 +294,50 @@ O modelo final apresentou diagnóstico mais robusto na comparação de modelos v
 
 -   Log(Rede Sub.) - redes subterrâneas são mais caras de manter; um aumento de 1% na rede eleva o custo em \~0.12%.
 
--   ID 40: o coeficiente de 2.714 é gigantesco e super significativo ($p < 0.001$). Isso confirma que o ID 40 era uma anomalia. Sem essa dummy, esse valor estaria "sujando" todos os outros coeficientes. Ele gasta muito mais do que o tamanho dele justificaria.
+-   ID 40: o coeficiente de 2.714 é gigantesco e super significativo ($p<0.001$). Isso confirma que o ID 40 era uma anomalia. Sem essa dummy, esse valor estaria "sujando" todos os outros coeficientes. Ele gasta muito mais do que o tamanho dele justificaria.
+
+------------------------------------------------------------------------
+
+## Exercício 2
+
+
+```{r}
+df <- read.table("danishlc.dat", header = TRUE)
+df$Age <- factor(df$Age, 
+                 levels = c("40-54", "55-59", "60-64", "65-69", "70-74", ">74")
+                 )
+df$City <- factor(df$City)
+library(modelsummary)
+datasummary_skim(df, fmt = 2)
+```
+A densidade da variável $pop$ é assimétrica à direita, e o sentido de colocá-la no modelo não pode ser como preditor, porque a população não pode ser interpretada como um fator de risco, mas como um "denominador" no qual o qual o risco é calculado, de forma que os coeficientes como a $Age$ representem que estar numa faixa etária X aumenta/diminui a taxa de incidência em Y%. Isso  tira o efeito do tamanho da cidade para que seja possível focar nas outras covariáveis com apelo causal.
+
+```{r}
+library(tidymodels)
+library(poissonreg)
+
+mod =
+  poisson_reg() %>%
+  set_engine("glm") %>%
+  set_mode("regression")
+
+wf =
+  workflow() %>%
+  add_recipe(recipe(Cases ~ Pop + Age + City, data = df)) %>%
+  add_model(mod)
+
+wf %>% fit(data = df)
+```
+
+```{r}
+mod_pois_v2 <- glm(Cases ~ Age + City, 
+                   family = poisson(link = "log"), 
+                   offset = log(Pop), 
+                   data = df)
+summary(mod_pois_v2)
+```
+
+
+
+
+
