@@ -1,0 +1,87 @@
+---
+format:
+  html:
+    toc: false
+    page-layout: full
+    css: styles/home.css
+---
+
+::: {.home-shell}
+
+# Modelos Lineares Generalizados
+
+Pagina dedicada a demonstação de habilidades na resolução dos desafios da matéria de Elementos de Machine Learning da Especialização em Estatística Aplicada (Data Science) da UFMG.
+
+
+::: {.content-grid}
+::: {.section-block}
+## Integrantes
+
+::: {.members-grid}
+::: {.member-card}
+<img class="member-photo" src="img/joao_victor_icon.png" alt="Foto de João Victor">
+
+### João Victor
+
+<p class="member-role">Data Analyst | Data Scientist | Machine Learning | SQL</p>
+
+::: {.social-links}
+[<i class="bi bi-github" aria-hidden="true"></i>](https://github.com/joaovictor-datascience){.social-link target="_blank" rel="noopener"}
+[<i class="bi bi-linkedin" aria-hidden="true"></i>](https://www.linkedin.com/in/joaovictor-datascience/){.social-link target="_blank" rel="noopener"}
+:::
+:::
+
+::: {.member-card}
+<img class="member-photo" src="img/lucas_tavares_icon.jpeg" alt="Foto de Lucas Tavares">
+
+### Lucas Tavares
+
+<p class="member-role">Economista | CP³P | Consultor</p>
+
+::: {.social-links}
+[<i class="bi bi-github" aria-hidden="true"></i>](https://github.com/lucastbrito){.social-link target="_blank" rel="noopener"}
+[<i class="bi bi-linkedin" aria-hidden="true"></i>](https://www.linkedin.com/in/lucastbrito){.social-link target="_blank" rel="noopener"}
+:::
+:::
+
+::: {.member-card}
+<img class="member-photo" src="img/lucas_reges_icon.png" alt="Foto de Lucas Reges">
+
+### Lucas Reges
+
+<p class="member-role">Data Science | Applied Statistics | SQL | Python | R</p>
+
+::: {.social-links}
+[<i class="bi bi-github" aria-hidden="true"></i>](https://github.com/zf0rest){.social-link target="_blank" rel="noopener"}
+[<i class="bi bi-linkedin" aria-hidden="true"></i>](https://www.linkedin.com/in/lucasregeslima/){.social-link target="_blank" rel="noopener"}
+:::
+:::
+:::
+:::
+
+::: {.section-block}
+## Desafios
+
+::: {.challenge-list}
+::: {.challenge-item}
+**Desafio 01**
+
+[Acessar desafio](desafios/Desafio1_Elementos_De_Aprendizado_De_Maquina.html)
+:::
+
+::: {.challenge-item}
+**Desafio 02**
+
+[Em breve]{.coming-soon}
+:::
+
+::: {.challenge-item}
+**Desafio 03**
+
+[Em breve]{.coming-soon}
+:::
+:::
+:::
+:::
+
+:::
