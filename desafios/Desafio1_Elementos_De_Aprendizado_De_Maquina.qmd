@@ -1,11 +1,64 @@
-## Exercício #01
+---
+format: 
+  html:
+    toc: true
+    html-math-method: mathjax
+    lang: pt-br
+embed-resources: true
+---
 
-Analisando os dados a partir da matriz de correlações abaixo, conclui-se que não há apenas forte associação linear entre $Y$ e as covariáveis do dataset, mas também colinearidade entre os próprios preditores. Esse fator é importante: colinearidade excessiva infla artificialmente o $R^2$ e mascara os efeitos reais dos estimadores.
+[← Voltar para a página inicial](../home.html)
+
+## Exercício 01 - Estimação dos custos operacionais
+
+### Objetivo
+O objetivo deste exercício é avaliar se os custos operacionais das distribuidoras de energia, medidos pelo PMSO, podem ser estimados a partir das demais variáveis disponíveis na base da ANEEL.
+
+### Leitura e preparação dos dados
+
+A base possui 52 empresas e 10 variáveis. A variável resposta é `PMSO`; as demais variáveis numéricas são candidatas a preditoras.
 
 ```{r}
+library(tidyverse)
 library(openxlsx)
-dados <- read.xlsx("ModeloVigente_DadosCP62_2023.xlsx")
+library(knitr)
+
+dados <- read.xlsx("../data/ModeloVigente_DadosCP62_2023.xlsx")
+
+preditores <- c(
+  "rede.alta",
+  "rede.subterranea",
+  "rede.aerea",
+  "mercadoP",
+  "cons",
+  "CHI",
+  "PNT"
+)
+
+resumo_variaveis <- dados |>
+  select(PMSO, all_of(preditores)) |>
+  pivot_longer(everything(), names_to = "variavel", values_to = "valor") |>
+  group_by(variavel) |>
+  summarise(
+    minimo = min(valor),
+    q1 = quantile(valor, 0.25),
+    mediana = median(valor),
+    media = mean(valor),
+    q3 = quantile(valor, 0.75),
+    maximo = max(valor),
+    .groups = "drop"
+  )
+
+kable(
+  resumo_variaveis,
+  digits = 2,
+  caption = "Resumo descritivo das variáveis numéricas."
+)
 ```
+
+### Análise exploratória
+
+Analisando os dados a partir da matriz de correlações abaixo, conclui-se que não há apenas forte associação linear entre $Y$ e as covariáveis do dataset, mas também colinearidade entre os próprios preditores. Esse fator é importante: colinearidade excessiva infla artificialmente o $R^2$ e mascara os efeitos reais dos estimadores.
 
 ```{r}
 #| label: fig-analise-conjunta
@@ -51,7 +104,15 @@ dados %>%
 
 Além disso, a distribução das variáveis numéricas intui um formato análago entre elas: uma típica assimetria à direita, ou seja, oportunidade para uma transformação $log-log$ para estabilizar a variância e prevenir heterocedasticidade. A transformação é cabível em ambos os lados da equação, pois todos possuem a mesma assimetria, resultando em um modelo da seguinte forma:
 
-$$\ln (Y_{i})=\beta _{0}+\beta _{k}\ln (X_{ki})+u_{i}$$
+$$\ln (Y_{i})=\beta _{0}+\beta _{k}\ln (X_{ki} + 1)+u_{i}$$
+
+::: {.callout-note}
+## Nota
+
+Estamos utilizando a tranformação $log-log$ com $X + 1$ pois algumas das variáveis apresentam valores iguais a zero, o que impossibilita a aplicação direta do logaritmo natural.
+:::
+
+### Ajustando o modelo
 
 Após a análise exploratória, levantamos através do estudo da "inflação de variância (VIF)" quais preditores são mais "perigosos" ao modelo por inflar o $R^2$ artificialmente e elaboramos dois modelos (com ou sem essas variáveis):
 
@@ -284,7 +345,7 @@ anova_comp %>%
   kable_styling(latex_options = c("hold_position", "scale_down"))
 ```
 
-Conclusão:
+### Conclusão
 
 O modelo final apresentou diagnóstico mais robusto na comparação de modelos via ANOVA, atendendo integralmente aos pressupostos clássicos da regressão linear. Adicionalmente, a ausência de outliers significativos via teste de Bonferroni valida a estratégia de isolamento das observações atípicas por variáveis dummy.
 
@@ -298,11 +359,19 @@ O modelo final apresentou diagnóstico mais robusto na comparação de modelos v
 
 ------------------------------------------------------------------------
 
-## Exercício 2
+## Exercício 2 - Análise de casos de câncer de pulmão
+
+### Objetivo
+
+O objetivo deste exercício é analisar os casos de câncer de pulmão em quatro cidades na Dinamarca entre os anos de 1968 e 1971.
+
+### Leitura e preparação dos dados
+
+A base possui 4 cidades e 3 váriaveis. A variável resposta é o `Cases`; as demais variáveis numéricas e categóricas são candidatas a preditoras.
 
 
 ```{r}
-df <- read.table("danishlc.dat", header = TRUE)
+df <- read.table("../data/danishlc.dat", header = TRUE)
 df$Age <- factor(df$Age, 
                  levels = c("40-54", "55-59", "60-64", "65-69", "70-74", ">74")
                  )
@@ -310,34 +379,158 @@ df$City <- factor(df$City)
 library(modelsummary)
 datasummary_skim(df, fmt = 2)
 ```
-A densidade da variável $pop$ é assimétrica à direita, e o sentido de colocá-la no modelo não pode ser como preditor, porque a população não pode ser interpretada como um fator de risco, mas como um "denominador" no qual o qual o risco é calculado, de forma que os coeficientes como a $Age$ representem que estar numa faixa etária X aumenta/diminui a taxa de incidência em Y%. Isso  tira o efeito do tamanho da cidade para que seja possível focar nas outras covariáveis com apelo causal.
+
+### Análise Descritiva
+
+Para entender melhor a incidência de câncer de pulmão, observaremos como as taxas da doença (casos dividos pela população) se distribuem nos grupos etários e nas cidades observadas.
 
 ```{r}
-library(tidymodels)
-library(poissonreg)
+#| echo: false
+library(tidyverse)
+library(useR)
+library(ggplot2)
 
-mod =
-  poisson_reg() %>%
-  set_engine("glm") %>%
-  set_mode("regression")
+# Descritiva de casos pela cidade
+graph_city <- df %>%
+  group_by(City) %>%
+    summarise(
+      freq_pop = sum(Cases)/sum(Pop)*1000
+    )
 
-wf =
-  workflow() %>%
-  add_recipe(recipe(Cases ~ Pop + Age + City, data = df)) %>%
-  add_model(mod)
 
-wf %>% fit(data = df)
+# Descritiva de faixa étaria
+graph_age <- df %>%
+  group_by(Age) %>%
+    summarise(
+      freq_pop = sum(Cases)/sum(Pop)*1000
+    )
+
+# Tema padrão para os gráficos
+tema_grafico <- theme_minimal() +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold",
+      size = 12
+    ),
+    axis.title = element_text(size = 10),
+    axis.text = element_text(size = 9),
+  )
+
+# Gráfico por cidade
+ggplot(graph_city,
+       aes(x = reorder(City, freq_pop), y = freq_pop)) +
+  geom_col(fill = "dimgray") +
+  labs(
+    title = "Gráfico 1 – Distribuição por cidade",
+    x = "Cidade",
+    y = "Taxa"
+  ) +
+  tema_grafico
+
+# Gráfico por faixa etária
+ggplot(graph_age,
+       aes(x = Age, y = freq_pop)) +
+  geom_col(fill = "dimgray") +
+  labs(
+    title = "Gráfico 2 – Distribuição da taxa de incidência nas faixas etárias",
+    x = "Age",
+    y = "taxa"
+  ) +
+  tema_grafico
+
 ```
+
+A partir dos gráficos, podemos observar uma prevalência crescente da doença em grupos etários mais velhos (com exceção do grupo “>74”, que apresenta incidência menor que as faixas anteriores). Entre as cidades, as taxas são relativamente homogêneas, com uma taxa levemente maior na cidade de Fredericia.
+
+Como a variável resposta representa uma contagem de eventos (número de casos de câncer de pulmão), um modelo linear clássico estimado por MQO não é o mais adequado para este problema. Em modelos lineares usuais, assume-se que a variável dependente seja contínua, aproximadamente normal e com variância constante. No presente caso, nenhuma dessas hipóteses é naturalmente satisfeita: o número de casos é discreto, não negativo e tende a apresentar variância crescente com a média.
+
+Além disso, os grupos observados possuem populações bastante diferentes entre si. Comparar diretamente o número absoluto de casos poderia levar a interpretações equivocadas, uma vez que grupos mais populosos tendem naturalmente a registrar mais ocorrências da doença. Assim, o interesse principal não está apenas no número de casos, mas na taxa de incidência da doença em cada grupo.
+
+### Ajustando o modelo
+
+Dessa forma, utilizaremos um Modelo Linear Generalizado com distribuição de Poisson e função de ligação logarítmica. Esse tipo de modelo é apropriado para variáveis de contagem e permite incorporar um termo de exposição populacional através do offset log(Pop), ajustando adequadamente as diferenças de tamanho populacional entre os grupos. Assim, os coeficientes passam a representar efeitos sobre a taxa esperada de incidência da doença, possibilitando comparar adequadamente as faixas etárias e as cidades analisadas.
 
 ```{r}
-mod_pois_v2 <- glm(Cases ~ Age + City, 
-                   family = poisson(link = "log"), 
-                   offset = log(Pop), 
-                   data = df)
-summary(mod_pois_v2)
+modelo <- glm(formula = Cases ~ Age + City + offset(log(Pop)), family = poisson(link = "log"), 
+    data = df)
+
+summary(modelo)
 ```
 
+### Análise dos resíduos
 
+```{r}
+#| echo: false
+#| fig-width: 10
+#| fig-height: 4
 
+R <- residuals(modelo, type = "deviance")
 
+# Dois gráficos lado a lado
+par(mfrow = c(1,2),
 
+    # Margens
+    mar = c(5,5,3,2),
+
+    # Cor dos eixos e textos
+    col.axis = "black",
+    col.lab = "black",
+
+    # Tamanho dos textos
+    cex.lab = 1.2,
+    cex.axis = 1.1
+)
+
+# -------------------------
+# Resíduos vs Ajustados
+# -------------------------
+plot(
+  fitted(modelo),
+  R,
+
+  pch = 1,
+  col = "black",
+
+  xlab = "fitted(modelo_pois)",
+  ylab = 'residuals(modelo_pois, type = "deviance")'
+)
+
+abline(h = 0, lty = 2)
+
+# -------------------------
+# QQPlot
+# -------------------------
+qqnorm(
+  R,
+  pch = 1,
+  col = "black",
+  main = ""
+)
+
+qqline(R, lty = 2)
+```
+
+Os resíduos não apresentaram padrão sistemático evidente, sugerindo adequação da especificação funcional do modelo.
+
+O valor de deviance/graus de liberdade foi de 1,56, o que sugere leve sobredispersão, mas não em nível severo. Em modelos de Poisson, espera-se teoricamente que a variância seja igual à esperança de Y, e, consequentemente, que a razão entre a deviance residual e os graus de liberdade seja próxima de 1. Valores muito superiores a 1 indicam que a variabilidade observada nos dados excede a prevista pelo modelo, caracterizando sobredispersão.
+
+No presente caso, o valor de 1,56 indica que os resíduos apresentam dispersão moderadamente maior que a assumida pela distribuição de Poisson. Contudo, esse desvio ainda não sugere inadequação grave do modelo. Em aplicações práticas, valores entre aproximadamente 1 e 2 costumam ser considerados aceitáveis, especialmente em amostras pequenas, como neste conjunto de dados.
+
+### Conclusões
+
+- Os resultados do modelo indicam forte associação entre a incidência de câncer de pulmão e a faixa etária da população. Todas as categorias etárias apresentaram razões de incidência superiores à categoria de referência e estatisticamente significativos em relação ao grupo de referência (40–54 anos), indicando aumento substancial da taxa esperada da doença conforme a idade avança.
+
+- Observa-se que os maiores coeficientes estão concentrados nas faixas entre 65 e 74 anos, sugerindo que esses grupos apresentam as maiores taxas relativas de incidência. O grupo acima de 74 anos ainda apresenta incidência elevada, porém inferior à observada imediatamente antes, comportamento que já havia sido sugerido na análise descritiva.
+
+- Como o modelo utiliza função de ligação logarítmica, os coeficientes possuem interpretação multiplicativa sobre a taxa esperada. Exponenciando os coeficientes das faixas etárias, obtêm-se razões de incidência (Incidence Rate Ratios).
+
+```{r}
+exp(coef(modelo))
+```
+
+Assim, pode-se interpretar os resultados dos coeficientes. Por exemplo a taxa esperada de câncer de pulmão no grupo de 70 a 74 anos é aproximadamente 6,4 vezes maior que na faixa etária de referência (40 a 54 anos), mantidas constantes as demais variáveis do modelo.
+
+- Em relação às cidades, os coeficientes negativos indicam taxas esperadas menores relativamente à cidade de referência (Fredericia). A cidade de Kolding apresentou diferença estatisticamente significativa ao nível de 5%, enquanto Horsens apresentou significância marginal. Já Vejle não apresentou evidência estatística suficiente para rejeitar igualdade em relação à cidade-base.
+
+- A qualidade global do ajuste mostrou-se satisfatória. A redução da deviance de 129.91 para 23.45 indica que o modelo explica parcela importante da variabilidade observada nos dados. Além disso, a proximidade entre a dispersão observada e o valor teórico da distribuição de Poisson sugere ausência de sobredispersão severa, indicando adequação do modelo adotado.
