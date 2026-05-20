@@ -36,7 +36,7 @@ Pagina dedicada a demonstação de habilidades na resolução dos desafios da ma
 
 ### Lucas Tavares
 
-<p class="member-role">Economista | CP³P | Consultor</p>
+<p class="member-role">Economista | CP³P | Consultor | Statistics</p>
 
 ::: {.social-links}
 [<i class="bi bi-github" aria-hidden="true"></i>](https://github.com/lucastbrito){.social-link target="_blank" rel="noopener"}

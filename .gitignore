@@ -12,7 +12,6 @@
 
 *.xlsx
 *.csv
-*.html
 *.dat
 
 **/*.quarto_ipynb
